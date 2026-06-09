@@ -1,0 +1,13 @@
+{
+    // Port Competitive Companion is configured to send to (default: 10045)
+    "port": 10045,
+
+    // Absolute or ~ path to the solution file that gets overwritten each problem
+    "sol_path": "~/cp/sol.cpp",
+
+    // Optional: path to a .cpp template file. If empty, a minimal built-in template is used.
+    "template_path": "",
+
+    // Automatically compile and run tests in FOC when a problem arrives
+    "auto_run_foc": true
+}

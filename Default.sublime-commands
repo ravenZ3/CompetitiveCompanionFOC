@@ -1,0 +1,18 @@
+[
+    {
+        "caption": "CC: Start Listener",
+        "command": "cc_start_listener"
+    },
+    {
+        "caption": "CC: Stop Listener",
+        "command": "cc_stop_listener"
+    },
+    {
+        "caption": "CC: Restart Listener",
+        "command": "cc_restart_listener"
+    },
+    {
+        "caption": "CC: Listener Status",
+        "command": "cc_status"
+    }
+]
