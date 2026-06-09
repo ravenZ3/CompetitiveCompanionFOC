@@ -56,8 +56,8 @@ def _render_template(data):
     return (src
         .replace("{name}", data.get("name", ""))
         .replace("{url}", data.get("url", ""))
-        .replace("{time_limit}", f"{limit_ms}ms" if limit_ms else "")
-        .replace("{memory_limit}", f"{limit_mb}MB" if limit_mb else "")
+        .replace("{time_limit}", "{}ms".format(limit_ms) if limit_ms else "")
+        .replace("{memory_limit}", "{}MB".format(limit_mb) if limit_mb else "")
         .replace("{date}", date.today().isoformat()))
 
 
@@ -72,12 +72,13 @@ def _run_verify(sol, tests):
     def write(text):
         panel.run_command("append", {"characters": text, "scroll_to_end": True})
 
-    compile_res = subprocess.run(
+    proc = subprocess.Popen(
         ["g++", "-std=c++17", "-O2", sol, "-o", BINARY],
-        capture_output=True, text=True
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    if compile_res.returncode != 0:
-        write("Compile error:\n" + compile_res.stderr)
+    _, stderr = proc.communicate()
+    if proc.returncode != 0:
+        write("Compile error:\n" + stderr.decode("utf-8", errors="replace"))
         return
 
     passed = 0
@@ -85,26 +86,32 @@ def _run_verify(sol, tests):
         inp = t["input"]
         expected = t["output"].strip()
         try:
-            res = subprocess.run(
-                [BINARY], input=inp, capture_output=True,
-                text=True, timeout=TIMEOUT
+            proc = subprocess.Popen(
+                [BINARY],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
-            actual = res.stdout.strip()
+            stdout, _ = proc.communicate(
+                input=inp.encode("utf-8"), timeout=TIMEOUT
+            )
+            actual = stdout.decode("utf-8", errors="replace").strip()
         except subprocess.TimeoutExpired:
-            write(f"Test {i}: TLE (>{TIMEOUT}s)\n")
+            proc.kill()
+            write("Test {}: TLE (>{}s)\n".format(i, TIMEOUT))
             continue
 
         if actual == expected:
-            write(f"Test {i}: PASS\n")
+            write("Test {}: PASS\n".format(i))
             passed += 1
         else:
-            write(f"Test {i}: FAIL\n")
+            write("Test {}: FAIL\n".format(i))
             inp_preview = inp.strip().replace("\n", " | ")
-            write(f"  in:  {inp_preview}\n")
-            write(f"  exp: {expected}\n")
-            write(f"  got: {actual}\n")
+            write("  in:  {}\n".format(inp_preview))
+            write("  exp: {}\n".format(expected))
+            write("  got: {}\n".format(actual))
 
-    write(f"\n{passed}/{len(tests)} passed\n")
+    write("\n{}/{} passed\n".format(passed, len(tests)))
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -137,7 +144,7 @@ def _on_problem(data):
 
     window = sublime.active_window()
     view = window.open_file(sol)
-    sublime.status_message(f"CC: {name} ({len(tests)} tests)")
+    sublime.status_message("CC: {} ({} tests)".format(name, len(tests)))
 
     auto_foc = _settings().get("auto_run_foc", True)
     auto_verify = _settings().get("auto_verify", True)
@@ -170,7 +177,9 @@ def _start():
         try:
             _server = HTTPServer(("", _port()), _Handler)
         except OSError as e:
-            sublime.error_message(f"CompetitiveCompanionFOC: could not bind port {_port()}\n{e}")
+            sublime.error_message(
+                "CompetitiveCompanionFOC: could not bind port {}\n{}".format(_port(), e)
+            )
             return False
         threading.Thread(target=_server.serve_forever, daemon=True).start()
         return True
@@ -188,7 +197,9 @@ def _stop():
 
 def plugin_loaded():
     if _start():
-        sublime.status_message(f"Competitive Companion listening on port {_port()}")
+        sublime.status_message(
+            "Competitive Companion listening on port {}".format(_port())
+        )
 
 
 def plugin_unloaded():
@@ -200,7 +211,7 @@ def plugin_unloaded():
 class CcStartListenerCommand(sublime_plugin.ApplicationCommand):
     def run(self):
         if _start():
-            sublime.status_message(f"CC listener started on port {_port()}")
+            sublime.status_message("CC listener started on port {}".format(_port()))
         else:
             sublime.status_message("CC listener is already running")
 
@@ -223,13 +234,15 @@ class CcRestartListenerCommand(sublime_plugin.ApplicationCommand):
     def run(self):
         _stop()
         if _start():
-            sublime.status_message(f"CC listener restarted on port {_port()}")
+            sublime.status_message("CC listener restarted on port {}".format(_port()))
 
 
 class CcStatusCommand(sublime_plugin.ApplicationCommand):
     def run(self):
         status = "RUNNING" if _server is not None else "STOPPED"
-        sublime.message_dialog(f"Competitive Companion listener is {status} on port {_port()}")
+        sublime.message_dialog(
+            "Competitive Companion listener is {} on port {}".format(status, _port())
+        )
 
 
 class CcVerifyCommand(sublime_plugin.ApplicationCommand):
