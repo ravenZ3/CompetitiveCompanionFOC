@@ -2,6 +2,6 @@
     "name": "CompetitiveCompanionFOC",
     "description": "Bridges the Competitive Companion browser extension with FastOlympicCoding in Sublime Text. Receives problems via HTTP, writes test cases in FOC format, and auto-triggers the FOC test runner.",
     "author": "Ramjan Khandelwal",
-    "homepage": "",
+    "homepage": "https://github.com/ravenZ3/CompetitiveCompanionFOC",
     "version": "1.0.0"
 }
