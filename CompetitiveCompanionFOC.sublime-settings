@@ -12,5 +12,14 @@
     "auto_run_foc": true,
 
     // Automatically compile and diff against expected outputs when a problem arrives
-    "auto_verify": true
+    "auto_verify": true,
+
+    // Create a separate directory per problem (e.g. ~/cp/Watermelon/sol.cpp).
+    // When false, sol_path is overwritten each time (default, good for contests).
+    "per_problem_dir": false,
+
+    // How to compare actual vs expected output:
+    //   "token" — split by whitespace, compare tokens (default, matches how judges work)
+    //   "none"  — disable verification entirely
+    "match_mode": "token"
 }

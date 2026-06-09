@@ -12,6 +12,9 @@ _server = None
 _lock = threading.Lock()
 
 DEFAULT_TEMPLATE = """\
+// {name}
+// {url}
+// Time: {time_limit} | Memory: {memory_limit} | Date: {date}
 #include <bits/stdc++.h>
 using namespace std;
 
@@ -56,12 +59,18 @@ def _render_template(data):
     return (src
         .replace("{name}", data.get("name", ""))
         .replace("{url}", data.get("url", ""))
-        .replace("{time_limit}", "{}ms".format(limit_ms) if limit_ms else "")
-        .replace("{memory_limit}", "{}MB".format(limit_mb) if limit_mb else "")
+        .replace("{time_limit}", f"{limit_ms}ms" if limit_ms else "")
+        .replace("{memory_limit}", f"{limit_mb}MB" if limit_mb else "")
         .replace("{date}", date.today().isoformat()))
 
 
 # ── Verify ────────────────────────────────────────────────────────────────────
+
+def _outputs_match(expected, actual):
+    if _settings().get("match_mode", "token") == "none":
+        return True
+    return expected.split() == actual.split()
+
 
 def _run_verify(sol, tests):
     window = sublime.active_window()
@@ -101,15 +110,17 @@ def _run_verify(sol, tests):
             write("Test {}: TLE (>{}s)\n".format(i, TIMEOUT))
             continue
 
-        if actual == expected:
+        if _outputs_match(expected, actual):
             write("Test {}: PASS\n".format(i))
             passed += 1
         else:
             write("Test {}: FAIL\n".format(i))
             inp_preview = inp.strip().replace("\n", " | ")
+            exp_preview = expected.strip().replace("\n", " | ")
+            got_preview = actual.strip().replace("\n", " | ") if actual.strip() else "(empty)"
             write("  in:  {}\n".format(inp_preview))
-            write("  exp: {}\n".format(expected))
-            write("  got: {}\n".format(actual))
+            write("  exp: {}\n".format(exp_preview))
+            write("  got: {}\n".format(got_preview))
 
     write("\n{}/{} passed\n".format(passed, len(tests)))
 
@@ -129,9 +140,17 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def _on_problem(data):
-    sol = _sol_path()
     tests = data.get("tests", [])
     name = data.get("name", "problem")
+
+    if _settings().get("per_problem_dir", False):
+        slug = "".join(c if c.isalnum() or c in " _-" else "" for c in name).strip().replace(" ", "_")
+        base = os.path.dirname(os.path.expanduser(_sol_path()))
+        problem_dir = os.path.join(base, slug)
+        os.makedirs(problem_dir, exist_ok=True)
+        sol = os.path.join(problem_dir, "sol.cpp")
+    else:
+        sol = _sol_path()
 
     with open(sol, "w") as f:
         f.write(_render_template(data))
