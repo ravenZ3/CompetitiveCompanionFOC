@@ -9,5 +9,8 @@
     "template_path": "",
 
     // Automatically compile and run tests in FOC when a problem arrives
-    "auto_run_foc": true
+    "auto_run_foc": true,
+
+    // Automatically compile and diff against expected outputs when a problem arrives
+    "auto_verify": true
 }

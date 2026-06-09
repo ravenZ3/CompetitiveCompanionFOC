@@ -14,5 +14,9 @@
     {
         "caption": "CC: Listener Status",
         "command": "cc_status"
+    },
+    {
+        "caption": "CC: Verify (run tests and diff)",
+        "command": "cc_verify"
     }
 ]

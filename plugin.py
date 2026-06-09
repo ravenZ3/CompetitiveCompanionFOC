@@ -1,6 +1,8 @@
 import json
 import os
+import subprocess
 import threading
+from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import sublime
@@ -21,6 +23,9 @@ int main() {
 }
 """
 
+BINARY = "/tmp/cc_sol"
+TIMEOUT = 5
+
 
 def _settings():
     return sublime.load_settings("CompetitiveCompanionFOC.sublime-settings")
@@ -30,19 +35,79 @@ def _sol_path():
     return os.path.expanduser(_settings().get("sol_path", "~/cp/sol.cpp"))
 
 
-def _template():
+def _port():
+    return _settings().get("port", 10045)
+
+
+def _render_template(data):
     tp = _settings().get("template_path", "")
     if tp:
         tp = os.path.expanduser(tp)
         if os.path.exists(tp):
             with open(tp) as f:
-                return f.read()
-    return DEFAULT_TEMPLATE
+                src = f.read()
+        else:
+            src = DEFAULT_TEMPLATE
+    else:
+        src = DEFAULT_TEMPLATE
+
+    limit_ms = data.get("timeLimit", "")
+    limit_mb = data.get("memoryLimit", "")
+    return (src
+        .replace("{name}", data.get("name", ""))
+        .replace("{url}", data.get("url", ""))
+        .replace("{time_limit}", f"{limit_ms}ms" if limit_ms else "")
+        .replace("{memory_limit}", f"{limit_mb}MB" if limit_mb else "")
+        .replace("{date}", date.today().isoformat()))
 
 
-def _port():
-    return _settings().get("port", 10045)
+# ── Verify ────────────────────────────────────────────────────────────────────
 
+def _run_verify(sol, tests):
+    window = sublime.active_window()
+    panel = window.create_output_panel("cc_verify")
+    panel.settings().set("word_wrap", False)
+    window.run_command("show_panel", {"panel": "output.cc_verify"})
+
+    def write(text):
+        panel.run_command("append", {"characters": text, "scroll_to_end": True})
+
+    compile_res = subprocess.run(
+        ["g++", "-std=c++17", "-O2", sol, "-o", BINARY],
+        capture_output=True, text=True
+    )
+    if compile_res.returncode != 0:
+        write("Compile error:\n" + compile_res.stderr)
+        return
+
+    passed = 0
+    for i, t in enumerate(tests, 1):
+        inp = t["input"]
+        expected = t["output"].strip()
+        try:
+            res = subprocess.run(
+                [BINARY], input=inp, capture_output=True,
+                text=True, timeout=TIMEOUT
+            )
+            actual = res.stdout.strip()
+        except subprocess.TimeoutExpired:
+            write(f"Test {i}: TLE (>{TIMEOUT}s)\n")
+            continue
+
+        if actual == expected:
+            write(f"Test {i}: PASS\n")
+            passed += 1
+        else:
+            write(f"Test {i}: FAIL\n")
+            inp_preview = inp.strip().replace("\n", " | ")
+            write(f"  in:  {inp_preview}\n")
+            write(f"  exp: {expected}\n")
+            write(f"  got: {actual}\n")
+
+    write(f"\n{passed}/{len(tests)} passed\n")
+
+
+# ── HTTP handler ──────────────────────────────────────────────────────────────
 
 class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -58,31 +123,44 @@ class _Handler(BaseHTTPRequestHandler):
 
 def _on_problem(data):
     sol = _sol_path()
+    tests = data.get("tests", [])
+    name = data.get("name", "problem")
 
     with open(sol, "w") as f:
-        f.write(_template())
+        f.write(_render_template(data))
 
-    tests = data.get("tests", [])
     with open(sol + ":tests", "w") as f:
         json.dump([{"test": t["input"]} for t in tests], f, indent=2)
 
+    with open(sol + ":expected", "w") as f:
+        json.dump([{"output": t["output"]} for t in tests], f, indent=2)
+
     window = sublime.active_window()
     view = window.open_file(sol)
-    name = data.get("name", "problem")
     sublime.status_message(f"CC: {name} ({len(tests)} tests)")
 
-    if not _settings().get("auto_run_foc", True):
-        return
+    auto_foc = _settings().get("auto_run_foc", True)
+    auto_verify = _settings().get("auto_verify", True)
 
-    def _run_foc():
+    def _after_load():
         if view.is_loading():
-            sublime.set_timeout(_run_foc, 100)
+            sublime.set_timeout(_after_load, 100)
             return
+
         window.focus_view(view)
-        view.run_command("view_tester", {"action": "make_opd", "use_debugger": False})
 
-    sublime.set_timeout(_run_foc, 200)
+        if auto_foc:
+            view.run_command("view_tester", {"action": "make_opd", "use_debugger": False})
 
+        if auto_verify and tests:
+            threading.Thread(
+                target=_run_verify, args=(sol, tests), daemon=True
+            ).start()
+
+    sublime.set_timeout(_after_load, 200)
+
+
+# ── Server lifecycle ──────────────────────────────────────────────────────────
 
 def _start():
     global _server
@@ -94,8 +172,7 @@ def _start():
         except OSError as e:
             sublime.error_message(f"CompetitiveCompanionFOC: could not bind port {_port()}\n{e}")
             return False
-        t = threading.Thread(target=_server.serve_forever, daemon=True)
-        t.start()
+        threading.Thread(target=_server.serve_forever, daemon=True).start()
         return True
 
 
@@ -118,7 +195,7 @@ def plugin_unloaded():
     _stop()
 
 
-# ── Commands ─────────────────────────────────────────────────────────────────
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 class CcStartListenerCommand(sublime_plugin.ApplicationCommand):
     def run(self):
@@ -151,7 +228,28 @@ class CcRestartListenerCommand(sublime_plugin.ApplicationCommand):
 
 class CcStatusCommand(sublime_plugin.ApplicationCommand):
     def run(self):
-        if _server is not None:
-            sublime.message_dialog(f"Competitive Companion listener is RUNNING on port {_port()}")
-        else:
-            sublime.message_dialog("Competitive Companion listener is STOPPED")
+        status = "RUNNING" if _server is not None else "STOPPED"
+        sublime.message_dialog(f"Competitive Companion listener is {status} on port {_port()}")
+
+
+class CcVerifyCommand(sublime_plugin.ApplicationCommand):
+    def run(self):
+        sol = _sol_path()
+        tests_path = sol + ":tests"
+        expected_path = sol + ":expected"
+
+        if not os.path.exists(tests_path) or not os.path.exists(expected_path):
+            sublime.status_message("CC: no test data found for current problem")
+            return
+
+        with open(tests_path) as f:
+            inputs = json.load(f)
+        with open(expected_path) as f:
+            outputs = json.load(f)
+
+        tests = [{"input": inp["test"], "output": out["output"]}
+                 for inp, out in zip(inputs, outputs)]
+
+        threading.Thread(
+            target=_run_verify, args=(sol, tests), daemon=True
+        ).start()

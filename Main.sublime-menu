@@ -9,7 +9,8 @@
                     { "caption": "Stop Listener",    "command": "cc_stop_listener" },
                     { "caption": "Restart Listener", "command": "cc_restart_listener" },
                     { "caption": "-" },
-                    { "caption": "Listener Status",  "command": "cc_status" }
+                    { "caption": "Listener Status",  "command": "cc_status" },
+                    { "caption": "Verify Tests",     "command": "cc_verify" }
                 ]
             }
         ]
